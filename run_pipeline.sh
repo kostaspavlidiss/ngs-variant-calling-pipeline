@@ -1,44 +1,39 @@
 #!/bin/bash
-set -e
 
-# Μονοπάτια & Αρχεία
-BASE_DIR="/home/drpav/analysis"
-FASTQ_DIR="$BASE_DIR/fastq"
-REF_DIR="$BASE_DIR/ref"
-ALIGNED_DIR="$BASE_DIR/aligned"
-VCF_DIR="$BASE_DIR/vcf"
-FASTQC_DIR="$BASE_DIR/fastqc"
-
-SAMPLE="HG00119"
-REF="$REF_DIR/hs37d5.fa"
-R1="$FASTQ_DIR/${SAMPLE}_1.fastq.gz"
-R2="$FASTQ_DIR/${SAMPLE}_2.fastq.gz"
-
-echo "=== [1/5] Δημιουργία Φακέλων ==="
-mkdir -p $ALIGNED_DIR $VCF_DIR $FASTQC_DIR
-
-echo "=== [2/5] Quality Control (FastQC) ==="
-fastqc --outdir $FASTQC_DIR $R1 $R2
-
-echo "=== [3/5] Alignment (BWA MEM -> Sorted BAM) ==="
-bwa mem -R "@RG\tID:${SAMPLE}\tSM:${SAMPLE}\tPL:ILLUMINA" $REF $R1 $R2 | \
-  samtools view -bS - | \
-  samtools sort -o $ALIGNED_DIR/${SAMPLE}.sorted.bam
-
-samtools index $ALIGNED_DIR/${SAMPLE}.sorted.bam
-
-echo "=== [4/5] Variant Calling (BCFtools) ==="
-bcftools mpileup -f $REF $ALIGNED_DIR/${SAMPLE}.sorted.bam | \
-  bcftools call -mv -Ob -o $VCF_DIR/${SAMPLE}.bcf
-
-bcftools view $VCF_DIR/${SAMPLE}.bcf > $VCF_DIR/${SAMPLE}.vcf
-
-echo "=== [5/5] Variant Annotation (BCFtools Annotate) ==="
-bcftools annotate \
-  --set-id 'VAR_%CHROM_%POS' \
-  $VCF_DIR/${SAMPLE}.vcf \
-  -O v -o $VCF_DIR/${SAMPLE}.ann.vcf
+# Exit immediately if a command exits with a non-zero status
+set -eo pipefail
 
 echo "=========================================="
-echo " SUCCESS! Όλα τα αποτελέσματα είναι έτοιμα στο: $BASE_DIR"
+echo " Starting NGS Variant Calling Pipeline "
+echo "=========================================="
+
+# Define directories & reference files
+DATA_DIR="data"
+RESULTS_DIR="results"
+REF="data/hs37d5.fa"
+
+# Step 1: Quality Control
+echo "[1/5] Running Quality Control with FastQC..."
+fastqc data/*.fastq -o $RESULTS_DIR/
+
+# Step 2: Alignment
+echo "[2/5] Aligning reads to reference genome with BWA MEM..."
+bwa mem -t 4 $REF data/sample_R1.fastq data/sample_R2.fastq > $RESULTS_DIR/aligned.sam
+
+# Step 3: SAM to Sorted BAM
+echo "[3/5] Converting and sorting SAM to BAM..."
+samtools view -bS $RESULTS_DIR/aligned.sam | samtools sort -o $RESULTS_DIR/aligned_sorted.bam
+samtools index $RESULTS_DIR/aligned_sorted.bam
+
+# Step 4: Variant Calling
+echo "[4/5] Calling variants with BCFtools..."
+bcftools mpileup -f $REF $RESULTS_DIR/aligned_sorted.bam | bcftools call -mv -Ob -o $RESULTS_DIR/raw_variants.bcf
+
+# Step 5: Annotation & VCF output
+echo "[5/5] Generating final annotated VCF file..."
+bcftools view $RESULTS_DIR/raw_variants.bcf > $RESULTS_DIR/final_variants.vcf
+
+echo "=========================================="
+echo " Pipeline Finished Successfully! "
+echo " Final output: $RESULTS_DIR/final_variants.vcf"
 echo "=========================================="
