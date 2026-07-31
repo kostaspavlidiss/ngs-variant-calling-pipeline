@@ -1,0 +1,14 @@
+# Big Data & Alignment files
+*.sam
+*.bam
+*.bai
+*.bcf
+*.vcf
+
+# FastQC outputs
+*_fastqc.zip
+*_fastqc.html
+
+# Temporary files
+*.tmp
+*.log
